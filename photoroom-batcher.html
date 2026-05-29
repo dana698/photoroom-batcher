@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>PhotoRoom Batch Organizer</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f0f0;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:2rem 1rem;}
+#app{background:#fff;border-radius:12px;border:1px solid #e0e0e0;padding:2rem;width:100%;max-width:660px;}
+h2{font-size:18px;font-weight:500;margin-bottom:4px;color:#1a1a1a;}
+.sub{font-size:14px;color:#666;margin-bottom:1.5rem;}
+button{font-family:inherit;font-size:13px;cursor:pointer;background:transparent;border:1px solid #ccc;border-radius:8px;padding:8px 16px;color:#1a1a1a;transition:background .15s;}
+button:hover{background:#f5f5f5;}
+button:active{transform:scale(0.98);}
+button:disabled{opacity:0.4;cursor:not-allowed;}
+button.primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a;width:100%;padding:11px;font-size:14px;}
+button.primary:hover{background:#333;}
+.card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:1.25rem;margin-bottom:1rem;}
+.card-center{text-align:center;padding:2.5rem 2rem;}
+.metrics{display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap;}
+.metric{background:#f5f5f5;border-radius:8px;padding:1rem;flex:1;min-width:120px;}
+.metric-label{font-size:12px;color:#888;margin-bottom:4px;}
+.metric-value{font-size:22px;font-weight:500;color:#1a1a1a;}
+.metric-sub{font-size:11px;color:#aaa;margin-top:2px;}
+.folder-browser{border:1px solid #e0e0e0;border-radius:12px;overflow:hidden;margin-bottom:1rem;}
+.browser-header{background:#f5f5f5;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #e0e0e0;flex-wrap:wrap;}
+.breadcrumb{font-size:13px;font-weight:500;color:#1a1a1a;flex:1;min-width:0;}
+.breadcrumb .sep{color:#aaa;margin:0 4px;}
+.folder-list{max-height:240px;overflow-y:auto;}
+.folder-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;font-size:13px;color:#1a1a1a;transition:background .1s;}
+.folder-row:hover{background:#f9f9f9;}
+.folder-row .name{flex:1;}
+.folder-row .chevron{color:#bbb;font-size:12px;}
+.folder-empty{padding:20px;text-align:center;font-size:13px;color:#aaa;}
+.log{background:#f5f5f5;border-radius:8px;padding:.75rem 1rem;max-height:180px;overflow-y:auto;margin-top:1rem;font-family:'SF Mono','Fira Code',monospace;}
+.log-row{display:flex;gap:10px;font-size:12px;padding:2px 0;}
+.log-ts{color:#bbb;flex-shrink:0;}
+.log-info{color:#555;}
+.log-success{color:#3b6d11;}
+.log-error{color:#a32d2d;}
+.progress-wrap{margin-bottom:1rem;}
+.progress-labels{display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:6px;}
+.progress-bar{height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden;}
+.progress-fill{height:100%;background:#185fa5;border-radius:3px;transition:width .4s;}
+.results-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.result-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:7px 12px;background:#f5f5f5;border-radius:8px;}
+.result-name{color:#1a1a1a;}
+.result-count{color:#888;}
+.icon-folder{display:inline-block;margin-right:8px;color:#888;}
+.note{background:#e6f1fb;border-radius:8px;padding:10px 14px;font-size:12px;color:#185fa5;margin-top:10px;line-height:1.6;}
+.big-icon{font-size:40px;margin-bottom:16px;color:#888;display:block;}
+.section-label{font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
+.spinner{display:inline-block;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div id="app">
+  <h2>&#128247; PhotoRoom batch organizer</h2>
+  <p class="sub">Copies images from a Google Drive folder into batches of 250, ready for PhotoRoom.</p>
+  <div id="screen-auth">
+    <div class="card card-center">
+      <span class="big-icon">&#128668;</span>
+      <p style="font-size:15px;margin-bottom:1rem;color:#1a1a1a;">Connect Google Drive to get started</p>
+      <button onclick="signIn()" style="padding:10px 28px;font-size:14px;">Sign in with Google &rarr;</button>
+      <div id="auth-err" style="margin-top:12px;font-size:13px;color:#a32d2d;display:none;"></div>
+    </div>
+  </div>
+  <div id="screen-main" style="display:none;">
+    <div class="section-label">Step 1 &mdash; choose a folder</div>
+    <div class="folder-browser">
+      <div class="browser-header">
+        <button id="btn-back" onclick="folderBack()" style="padding:4px 10px;font-size:12px;display:none;" aria-label="Go up">&larr;</button>
+        <div class="breadcrumb" id="breadcrumb">My Drive</div>
+        <button onclick="selectCurrentFolder()" style="padding:5px 12px;font-size:12px;">Select this folder &rarr;</button>
+      </div>
+      <div class="folder-list" id="folder-list">
+        <div class="folder-empty">Loading&hellip;</div>
+      </div>
+    </div>
+    <div id="scan-result" style="display:none;">
+      <div class="metrics" id="metrics"></div>
+      <div id="progress-section" style="display:none;">
+        <div class="progress-wrap">
+          <div class="progress-labels"><span>Creating batch folders&hellip;</span><span id="prog-label">0 / 0</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        </div>
+      </div>
+      <button class="primary" id="btn-run" onclick="run()">Create batch folders &amp; copy images &rarr;</button>
+      <div id="results-section" style="display:none;">
+        <div class="card" style="margin-top:1rem;">
+          <div style="font-size:13px;font-weight:500;margin-bottom:10px;color:#3b6d11;">&#10003; Batch folders created</div>
+          <div class="results-list" id="results-list"></div>
+          <button onclick="resetApp()" style="margin-top:14px;width:100%;padding:9px;font-size:13px;">Organize another folder &rarr;</button>
+        </div>
+      </div>
+    </div>
+    <div id="log-panel" style="display:none;"><div class="log" id="log"></div></div>
+  </div>
+</div>
+
+<script>
+const CLIENT_ID = "230446235593-vt7oh2mc6vj6gcpnagg3elm0bujl4u4r.apps.googleusercontent.com";
+const BATCH_SIZE = 250;
+const GDRIVE = "https://www.googleapis.com/drive/v3";
+const IMAGE_MIME = ["image/jpeg","image/png","image/webp","image/gif","image/heic","image/tiff","image/bmp"];
+const IMAGE_EXT = ["jpg","jpeg","png","webp","gif","heic","tiff","bmp"];
+
+let token = null;
+let stack = [{id:"root",name:"My Drive"}];
+let currentImages = [];
+let currentBatches = [];
+let currentFolder = null;
+
+const isImage = f => IMAGE_MIME.includes(f.mimeType) || IMAGE_EXT.includes((f.name||"").split(".").pop().toLowerCase());
+const chunk = (arr,n) => { const r=[]; for(let i=0;i<arr.length;i+=n) r.push(arr.slice(i,i+n)); return r; };
+const pad = n => String(n).padStart(2,"0");
+const $ = id => document.getElementById(id);
+
+function signIn() {
+  try {
+    google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: "https://www.googleapis.com/auth/drive",
+      callback: r => {
+        if(r.error){ showAuthErr(r.error); return; }
+        token = r.access_token;
+        $("screen-auth").style.display = "none";
+        $("screen-main").style.display = "block";
+        loadFolders("root");
+      }
+    }).requestAccessToken();
+  } catch(e) { showAuthErr("Sign-in failed. Make sure you are online."); }
+}
+
+function showAuthErr(msg) {
+  const el = $("auth-err");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+async function gdrive(path) {
+  const r = await fetch(GDRIVE+path, {headers:{Authorization:`Bearer ${token}`}});
+  if(!r.ok) throw new Error("Drive API error: "+r.status);
+  return r.json();
+}
+
+async function gdrivePost(path, body) {
+  const r = await fetch(GDRIVE+path, {
+    method:"POST",
+    headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+    body:JSON.stringify(body)
+  });
+  if(!r.ok) throw new Error("Drive API error: "+r.status);
+  return r.json();
+}
+
+async function loadFolders(parentId) {
+  $("folder-list").innerHTML = '<div class="folder-empty">Loading&hellip;</div>';
+  const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const d = await gdrive(`/files?q=${q}&fields=files(id,name)&orderBy=name&pageSize=100`);
+  const folders = d.files||[];
+  if(!folders.length) {
+    $("folder-list").innerHTML = '<div class="folder-empty">No subfolders here &mdash; select this folder or go back</div>';
+    return;
+  }
+  $("folder-list").innerHTML = folders.map(f=>`
+    <div class="folder-row" onclick="openFolder('${f.id}','${f.name.replace(/'/g,"\\'")}')">
+      <span class="icon-folder">&#128193;</span>
+      <span class="name">${f.name}</span>
+      <span class="chevron">&rsaquo;</span>
+    </div>`).join("");
+}
+
+function updateBreadcrumb() {
+  $("breadcrumb").innerHTML = stack.map((f,i)=>
+    i===0 ? f.name : `<span class="sep">/</span>${f.name}`
+  ).join("");
+  $("btn-back").style.display = stack.length > 1 ? "inline-block" : "none";
+}
+
+async function openFolder(id, name) {
+  stack.push({id,name});
+  updateBreadcrumb();
+  await loadFolders(id);
+}
+
+async function folderBack() {
+  if(stack.length<=1) return;
+  stack.pop();
+  updateBreadcrumb();
+  await loadFolders(stack[stack.length-1].id);
+}
+
+async function selectCurrentFolder() {
+  currentFolder = stack[stack.length-1];
+  $("scan-result").style.display = "none";
+  $("log-panel").style.display = "block";
+  $("results-section").style.display = "none";
+  $("progress-section").style.display = "none";
+  $("btn-run").style.display = "block";
+  $("log").innerHTML = "";
+  currentImages = []; currentBatches = [];
+  addLog(`Scanning "${currentFolder.name}"…`);
+  try {
+    const all = await getAllImages(currentFolder.id);
+    const imgs = all.filter(isImage);
+    if(!imgs.length){ addLog("No images found in this folder.","error"); return; }
+    currentImages = imgs;
+    currentBatches = chunk(imgs, BATCH_SIZE);
+    addLog(`Found ${imgs.length} image${imgs.length!==1?"s":""} → ${currentBatches.length} batch${currentBatches.length!==1?"es":""} needed`,"success");
+    renderMetrics();
+    $("scan-result").style.display = "block";
+  } catch(e) { addLog("Error: "+e.message,"error"); }
+}
+
+async function getAllImages(folderId) {
+  let all=[], pt=null;
+  do {
+    const q = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+    const url = `/files?q=${q}&fields=nextPageToken,files(id,name,mimeType)&pageSize=1000${pt?`&pageToken=${pt}`:""}`;
+    const d = await gdrive(url);
+    all = all.concat(d.files||[]);
+    pt = d.nextPageToken;
+  } while(pt);
+  return all;
+}
+
+function renderMetrics() {
+  const last = currentBatches[currentBatches.length-1];
+  $("metrics").innerHTML = `
+    <div class="metric"><div class="metric-label">Folder</div><div class="metric-value" style="font-size:16px;">${currentFolder.name}</div><div class="metric-sub">selected</div></div>
+    <div class="metric"><div class="metric-label">Images found</div><div class="metric-value">${currentImages.length.toLocaleString()}</div><div class="metric-sub">originals kept</div></div>
+    <div class="metric"><div class="metric-label">Batches</div><div class="metric-value">${currentBatches.length}</div><div class="metric-sub">&le;${BATCH_SIZE} each</div></div>
+    <div class="metric"><div class="metric-label">Last batch</div><div class="metric-value">${last?last.length:0}</div><div class="metric-sub">images</div></div>`;
+}
+
+async function run() {
+  $("btn-run").disabled = true;
+  $("progress-section").style.display = "block";
+  $("results-section").style.display = "none";
+  const results = [];
+  try {
+    for(let i=0;i<currentBatches.length;i++){
+      const name = `Batch_${pad(i+1)}_PhotoRoom`;
+      addLog(`Creating ${name}…`);
+      const folder = await gdrivePost("/files",{
+        name, mimeType:"application/vnd.google-apps.folder", parents:[currentFolder.id]
+      });
+      addLog(`Copying ${currentBatches[i].length} images into ${name}…`);
+      for(const img of currentBatches[i]){
+        await fetch(`${GDRIVE}/files/${img.id}/copy`,{
+          method:"POST",
+          headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+          body:JSON.stringify({name:img.name,parents:[folder.id]})
+        });
+      }
+      results.push({name,count:currentBatches[i].length});
+      const pct = Math.round(((i+1)/currentBatches.length)*100);
+      $("progress-fill").style.width = pct+"%";
+      $("prog-label").textContent = `${i+1} / ${currentBatches.length}`;
+      addLog(`✓ ${name} complete`,"success");
+    }
+    renderResults(results);
+    addLog(`All done — ${currentBatches.length} batch folders created, originals untouched.`,"success");
+  } catch(e) {
+    addLog("Error: "+e.message,"error");
+    $("btn-run").disabled = false;
+  }
+}
+
+function renderResults(results) {
+  $("results-section").style.display = "block";
+  $("btn-run").style.display = "none";
+  $("results-list").innerHTML = results.map(r=>`
+    <div class="result-row">
+      <span class="result-name">&#128193; ${r.name}</span>
+      <span class="result-count">${r.count} images</span>
+    </div>`).join("");
+}
+
+function resetApp() {
+  currentFolder=null; currentImages=[]; currentBatches=[];
+  $("scan-result").style.display="none";
+  $("log-panel").style.display="none";
+  $("results-section").style.display="none";
+  $("progress-section").style.display="none";
+  $("btn-run").disabled=false;
+  $("btn-run").style.display="block";
+  stack=[{id:"root",name:"My Drive"}];
+  updateBreadcrumb();
+  loadFolders("root");
+}
+
+function addLog(msg,type="info") {
+  const ts = new Date().toLocaleTimeString("en-US",{hour12:false});
+  $("log").innerHTML += `<div class="log-row"><span class="log-ts">${ts}</span><span class="log-${type}">${msg}</span></div>`;
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+window.addEventListener("load", ()=>{
+  if(typeof google==="undefined"){
+    setTimeout(()=>{ if(typeof google==="undefined") showAuthErr("Google API failed to load. Check your internet connection."); },3000);
+  }
+});
+</script>
+</body>
+</html>
