@@ -34,6 +34,7 @@ button.primary:hover{background:#333;}
 .folder-row .name{flex:1;}
 .folder-row .chevron{color:#bbb;font-size:12px;}
 .folder-empty{padding:20px;text-align:center;font-size:13px;color:#aaa;}
+.folder-error{padding:20px;text-align:center;font-size:13px;color:#a32d2d;line-height:1.6;}
 .log{background:#f5f5f5;border-radius:8px;padding:.75rem 1rem;max-height:180px;overflow-y:auto;margin-top:1rem;font-family:'SF Mono','Fira Code',monospace;}
 .log-row{display:flex;gap:10px;font-size:12px;padding:2px 0;}
 .log-ts{color:#bbb;flex-shrink:0;}
@@ -49,11 +50,9 @@ button.primary:hover{background:#333;}
 .result-name{color:#1a1a1a;}
 .result-count{color:#888;}
 .icon-folder{display:inline-block;margin-right:8px;color:#888;}
-.note{background:#e6f1fb;border-radius:8px;padding:10px 14px;font-size:12px;color:#185fa5;margin-top:10px;line-height:1.6;}
 .big-icon{font-size:40px;margin-bottom:16px;color:#888;display:block;}
 .section-label{font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
-.spinner{display:inline-block;animation:spin 1s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg);}}
+.debug-box{background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:12px;font-size:12px;color:#555;margin-top:10px;font-family:'SF Mono','Fira Code',monospace;word-break:break-all;line-height:1.6;}
 </style>
 </head>
 <body>
@@ -80,6 +79,7 @@ button.primary:hover{background:#333;}
         <div class="folder-empty">Loading&hellip;</div>
       </div>
     </div>
+    <div id="debug-panel"></div>
     <div id="scan-result" style="display:none;">
       <div class="metrics" id="metrics"></div>
       <div id="progress-section" style="display:none;">
@@ -119,6 +119,10 @@ const chunk = (arr,n) => { const r=[]; for(let i=0;i<arr.length;i+=n) r.push(arr
 const pad = n => String(n).padStart(2,"0");
 const $ = id => document.getElementById(id);
 
+function showDebug(label, data) {
+  $("debug-panel").innerHTML = `<div class="debug-box"><strong>${label}:</strong><br>${typeof data==="object"?JSON.stringify(data,null,2):data}</div>`;
+}
+
 function signIn() {
   try {
     google.accounts.oauth2.initTokenClient({
@@ -132,7 +136,7 @@ function signIn() {
         loadFolders("root");
       }
     }).requestAccessToken();
-  } catch(e) { showAuthErr("Sign-in failed. Make sure you are online."); }
+  } catch(e) { showAuthErr("Sign-in failed: "+e.message); }
 }
 
 function showAuthErr(msg) {
@@ -142,9 +146,14 @@ function showAuthErr(msg) {
 }
 
 async function gdrive(path) {
-  const r = await fetch(GDRIVE+path, {headers:{Authorization:`Bearer ${token}`}});
-  if(!r.ok) throw new Error("Drive API error: "+r.status);
-  return r.json();
+  const url = GDRIVE+path;
+  const r = await fetch(url, {headers:{Authorization:`Bearer ${token}`}});
+  const text = await r.text();
+  if(!r.ok) {
+    showDebug("Drive API error (status "+r.status+")", text);
+    throw new Error("Drive API error "+r.status+": "+text.slice(0,200));
+  }
+  return JSON.parse(text);
 }
 
 async function gdrivePost(path, body) {
@@ -153,25 +162,34 @@ async function gdrivePost(path, body) {
     headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
     body:JSON.stringify(body)
   });
-  if(!r.ok) throw new Error("Drive API error: "+r.status);
-  return r.json();
+  const text = await r.text();
+  if(!r.ok) {
+    showDebug("Drive POST error (status "+r.status+")", text);
+    throw new Error("Drive API error "+r.status);
+  }
+  return JSON.parse(text);
 }
 
 async function loadFolders(parentId) {
   $("folder-list").innerHTML = '<div class="folder-empty">Loading&hellip;</div>';
-  const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const d = await gdrive(`/files?q=${q}&fields=files(id,name)&orderBy=name&pageSize=100`);
-  const folders = d.files||[];
-  if(!folders.length) {
-    $("folder-list").innerHTML = '<div class="folder-empty">No subfolders here &mdash; select this folder or go back</div>';
-    return;
+  $("debug-panel").innerHTML = "";
+  try {
+    const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+    const d = await gdrive(`/files?q=${q}&fields=files(id,name)&orderBy=name&pageSize=100`);
+    const folders = d.files||[];
+    if(!folders.length) {
+      $("folder-list").innerHTML = '<div class="folder-empty">No subfolders here &mdash; select this folder or go back</div>';
+      return;
+    }
+    $("folder-list").innerHTML = folders.map(f=>`
+      <div class="folder-row" onclick="openFolder('${f.id}','${f.name.replace(/'/g,"\\'").replace(/"/g,"&quot;")}')">
+        <span class="icon-folder">&#128193;</span>
+        <span class="name">${f.name}</span>
+        <span class="chevron">&rsaquo;</span>
+      </div>`).join("");
+  } catch(e) {
+    $("folder-list").innerHTML = `<div class="folder-error">&#9888; Error loading folders:<br><br>${e.message}<br><br>Check the yellow box below for details.</div>`;
   }
-  $("folder-list").innerHTML = folders.map(f=>`
-    <div class="folder-row" onclick="openFolder('${f.id}','${f.name.replace(/'/g,"\\'")}')">
-      <span class="icon-folder">&#128193;</span>
-      <span class="name">${f.name}</span>
-      <span class="chevron">&rsaquo;</span>
-    </div>`).join("");
 }
 
 function updateBreadcrumb() {
@@ -201,6 +219,7 @@ async function selectCurrentFolder() {
   $("results-section").style.display = "none";
   $("progress-section").style.display = "none";
   $("btn-run").style.display = "block";
+  $("btn-run").disabled = false;
   $("log").innerHTML = "";
   currentImages = []; currentBatches = [];
   addLog(`Scanning "${currentFolder.name}"…`);
@@ -213,7 +232,7 @@ async function selectCurrentFolder() {
     addLog(`Found ${imgs.length} image${imgs.length!==1?"s":""} → ${currentBatches.length} batch${currentBatches.length!==1?"es":""} needed`,"success");
     renderMetrics();
     $("scan-result").style.display = "block";
-  } catch(e) { addLog("Error: "+e.message,"error"); }
+  } catch(e) { addLog("Error scanning: "+e.message,"error"); }
 }
 
 async function getAllImages(folderId) {
@@ -289,6 +308,7 @@ function resetApp() {
   $("progress-section").style.display="none";
   $("btn-run").disabled=false;
   $("btn-run").style.display="block";
+  $("debug-panel").innerHTML="";
   stack=[{id:"root",name:"My Drive"}];
   updateBreadcrumb();
   loadFolders("root");
@@ -301,9 +321,7 @@ function addLog(msg,type="info") {
 }
 
 window.addEventListener("load", ()=>{
-  if(typeof google==="undefined"){
-    setTimeout(()=>{ if(typeof google==="undefined") showAuthErr("Google API failed to load. Check your internet connection."); },3000);
-  }
+  setTimeout(()=>{ if(typeof google==="undefined") showAuthErr("Google API failed to load. Check your internet connection."); },3000);
 });
 </script>
 </body>
