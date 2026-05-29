@@ -115,13 +115,18 @@ button.danger:hover{background:#c0392b;}
           <div class="card" style="margin-top:1rem;">
             <div style="font-size:13px;font-weight:500;margin-bottom:10px;color:#3b6d11;">&#10003; Batch folders created</div>
             <div class="results-list" id="results-list"></div>
-            <button onclick="resetApp()" style="margin-top:14px;width:100%;padding:9px;font-size:13px;">Organize another folder &rarr;</button>
+            <button onclick="window.open(`https://drive.google.com/drive/folders/${currentFolder.id}`,'_blank')" style="margin-top:14px;width:100%;padding:10px;font-size:13px;background:#0d1b6e;color:#fff;border-color:#0d1b6e;border-radius:8px;">&#128193; Open folder in Google Drive &rarr;</button>
+          <button onclick="resetApp()" style="margin-top:8px;width:100%;padding:9px;font-size:13px;">Organize another folder &rarr;</button>
           </div>
         </div>
       </div>
       <div id="restore-panel"></div>
     <div id="log-panel" style="display:none;"><div class="log" id="log"></div></div>
     </div>
+  <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #e0e0e0;display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-size:11px;color:#bbb;">GFS PhotoRoom Batch Organizer</span>
+    <span style="font-size:11px;color:#bbb;">v3</span>
+  </div>
   </div>
 </div>
 
